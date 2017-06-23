@@ -4,10 +4,19 @@ import:
 # This is the core Origin dependency.
 # TODO: update version, maybe use origin too
 - package: github.com/openshift/origin
-  version: v1.5.0
-  repo:    git@github.com:openshift/origin.git
+  version: v3.6.122-1
+  repo:    git@github.com:openshift/ose.git
   vcs:     git
 - package: github.com/Sirupsen/logrus
   version: v0.11.5
   repo:    https://github.com/Sirupsen/logrus.git
   vcs:     git
+
+# WARNING: this is an unfortunate hack to work past an issue that surfaced with vendoring.
+# Without this the cluster monitor tests fail to compile after vendoring 3.6 with:
+#   undefined: grpc.SupportPackageIsVersion4
+# For some reason caused by importing: "github.com/openshift/origin/pkg/client/testclient"
+# Using this explicit grpc version works past by correctly picking up a version of grpc
+# that passes this compile check for etcd.
+- package: google.golang.org/grpc
+  version: v1.0.4
