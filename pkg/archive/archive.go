@@ -162,6 +162,7 @@ func createAndRefresh(info *resource.Info) error {
 	return nil
 }
 
+
 // Import generates API objects for the project based on a template (currently a YAML string).
 func (a *Archiver) Import(yamlInput string) error {
 	a.log.Info("beginning import")
@@ -173,7 +174,6 @@ func (a *Archiver) Import(yamlInput string) error {
 		kapi.Codecs.UniversalDecoder()).
 		ContinueOnError().
 		NamespaceParam(a.namespace).DefaultNamespace().AllNamespaces(false).
-		// ResourceTypeOrNameArgs(true, "all").
 		Flatten()
 	a.log.Info("build created")
 
@@ -194,23 +194,24 @@ func (a *Archiver) Import(yamlInput string) error {
 		if info.ResourceMapping().Resource != "pods" &&
 			info.ResourceMapping().Resource != "replicationcontrollers" {
 
-			// TODO: May be redundant/unnecessary config settings
-			// Why not use info.Object?
-			// clientConfig, err := a.f.ClientConfig()
-			// if err != nil {
-			// 	return err
-			// }
+			// check if object is a Service Account
+			if info.ResourceMapping().Resource == "serviceaccount" {
 
-			// do we need something explicit for the input version or is this taken care of somewhere else?
+				// pass in the current object being visited into scanServiceAccountsForImport
+				err = a.scanServiceAccountsForImport(info.Object)
+				if err != nil {
+					objLog.Info("error when scanning for service account")
+					return err
+				}
+			} else {
 
-			err = createAndRefresh(info)
-			if err != nil {
-				objLog.Info("error creating object")
-				return err
+				err = createAndRefresh(info)
+				if err != nil {
+					objLog.Info("error creating object")
+					return err
+				}
+				objLog.Info("importing")
 			}
-
-			objLog.Info("importing")
-			// a.importedObjects = append(a.importedObjects, object)
 		} else {
 			objLog.Info("skipping")
 		}
@@ -221,9 +222,72 @@ func (a *Archiver) Import(yamlInput string) error {
 		a.log.Error("error visiting objects", err)
 		return err
 	}
-
 	return nil
 }
+
+
+// scanServiceAccountsForImport scans for an already existing Service Account and adds imagePullSecrets if any exist
+// pass in the current object being visited, which has alreayd been identified as a Service Account
+func (a *Archiver) scanServiceAccountsForImport(object *resource.Info.Object) error {
+
+	a.log.Debug("scanning service accounts already created by default or imported")
+	sas, err := a.kc.CoreV1().ServiceAccounts(a.namespace).List(metav1.ListOptions{})
+	if err != nil {
+		a.log.Error("error finding service accounts", err)
+		return err
+	}
+
+	a.log.Debugf("found %d service accounts", len(sas.Items))
+
+	for i := range sas.Items {
+		// Need to use the index here as we must use the pointer to use as a runtime.Object
+		s := sas.Items[i]
+		objLog := a.log.WithFields(log.Fields{
+			"object": fmt.Sprintf("%s/%s", a.ObjKind(&s), s.Name),
+		})
+
+		saObject := object.(*kapiv1.ServiceAccount)
+
+		if saObject.Name == s.Name { // Service Account, s, already exists
+
+			// find the image pull secret references in saObject and add to the current Service Account, s, being iterated over
+			// note that these service accounts may take
+			// a few seconds to appear after the project is created
+			err = retry(10, 500*time.Millisecond, tlog, func() (err error) {
+
+				imgPullSecrets := []kapiv1.LocalObjectReference{}
+				a.log.Infoln(imgPullSecrets)
+				for !, r := range saObject.ImagePullSecrets{
+
+					imgPullSecrets = append(s.ImagePullSecrets, r)
+				}
+				s.ImagePullSecrets = imgPullSecrets
+
+
+				s.ImagePullSecrets = append(s.ImagePullSecrets, kapiv1.LocalObjectReference{buildSecret.GetName()})
+				_, err = h.kc.CoreV1().ServiceAccounts(a.namespace).Update(s)
+				if err != nil {
+					return
+				}
+				return
+			})
+			if err != nil {
+				t.Fatalf("error updating existing service account: %s", err)
+			}
+
+		} else { // Service Account does NOT already exist
+
+			err = createAndRefresh(info)
+			if err != nil {
+				objLog.Info("error creating object")
+				return err
+			}
+		}
+		objLog.Info("importing")
+	}
+	return nil
+}
+
 
 // scanProjectObjects iterates most objects in a project and determines if they should be exported.
 // Some types are not included in this however and must be dealt with separately. (i.e. Secrets)
@@ -442,17 +506,6 @@ func (a *Archiver) exportTemplate(obj runtime.Object) error {
 	if err != nil {
 		return err
 	}
-	return nil
-}
-
-// importTemplate takes .yaml file and creates a resultant object
-func (a *Archiver) importTemplate(yamlObject string) error {
-
-	a.log.Infoln("reading from YAML file")
-	// create runtime.Object
-
-	// append to objectsImported
-	// a.objectsImported = append(a.objectsImported, obj)
 	return nil
 }
 
