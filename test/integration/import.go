@@ -68,10 +68,23 @@ func testImportViaStream(t *testing.T, h *testHarness) {
 	tlog.Info("created test project")
 	defer h.pc.ProjectV1().Projects().Delete(pn, &metav1.DeleteOptions{})
 
-	a := archive.NewArchiver(h.pc, h.ac, h.uc, h.uidmc, h.idc,
-		h.clientFactory, h.oc, h.kc, pn, "user")
+	expected := []string{
+		"BuildConfig/testbc",
+		"DeploymentConfig/testdc",
+		"Secret/testsecret",
+		"Secret/dockerbuildsecret",
+		"ServiceAccount/testserviceaccount",
+		"ServiceAccount/builder",
+		"ServiceAccount/deployer",
+		"ServiceAccount/default",
+		"ImageStream/integratedregistry",
+		"ImageStream/postgresql",
+	}
 
-	file, err := ioutil.ReadFile("user.yaml")
+	a := archive.NewArchiver(h.pc, h.ac, h.uc, h.uidmc, h.idc,
+		h.clientFactory, h.oc, h.kc, pn, "admin")
+
+	file, err := ioutil.ReadFile("/home/vealex/Documents/Work/src/github.com/openshift/online-archivist/admin.yaml")
 	if err != nil {
 		log.Info("error reading file")
 	}
