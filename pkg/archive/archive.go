@@ -509,6 +509,7 @@ func (a *Archiver) scanServiceAccountsForImport(info *resource.Info) error {
 		a.log.Error("error finding service accounts", err)
 		return err
 	}
+
 	a.log.Debugf("found %d service accounts", len(sas.Items))
 
 	for i := range sas.Items {
