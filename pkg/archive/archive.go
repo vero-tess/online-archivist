@@ -20,9 +20,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/pkg/api/v1"
 	kapi "k8s.io/kubernetes/pkg/api"
 	kapiv1 "k8s.io/kubernetes/pkg/api/v1"
 	kclientset "k8s.io/kubernetes/pkg/client/clientset_generated/clientset"
+	"k8s.io/kubernetes/pkg/controller/namespace/deletion"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
 	"k8s.io/kubernetes/pkg/printers"
 
@@ -365,7 +367,20 @@ func (a *Archiver) Archive() (string, error) {
 	a.log.Debug(yamlStr)
 
 	// Finally delete the project's associated resources, but not the project.
-	a.pc.ProjectV1().Projects().Delete(a.namespace, &metav1.DeleteOptions{})
+	// a.pc.ProjectV1().Projects().Delete(a.namespace, &metav1.DeleteOptions{})
+
+	// clientPool := dynamic.NewClientPool(clientConfig, api.Registry.RESTMapper(), dynamic.LegacyAPIPathResolverFunc)
+
+	discoverResourcesFn := a.kc.Discovery().ServerPreferredNamespacedResources
+
+	// d := deletion.NewNamespacedResourcesDeleter(a.kc.Core().Namespaces(), clientPool, a.kc.Core(), discoverResourcesFn, v1.FinalizerKubernetes, true)
+	d := deletion.NewNamespacedResourcesDeleter(a.kc.Core().Namespaces(), nil, a.kc.Core(), discoverResourcesFn, v1.FinalizerKubernetes, true)
+
+	// deleting resources in namespace, not namespace itself
+	err = d.Delete(a.namespace)
+	if err != nil {
+		a.log.Errorf("Unexpected error when synching namespace %v", err)
+	}
 
 	return yamlStr, nil
 }
@@ -556,6 +571,7 @@ func (a *Archiver) scanServiceAccountsForImport(info *resource.Info) error {
 }
 
 // GetImportedObjects returns a kapi List of imported objects
+// Primarily used for testing
 func (a *Archiver) GetImportedObjects() runtime.Object {
 
 	template := &kapi.List{
